@@ -23,18 +23,18 @@ PRIVATE_REPO=false
 
 # Available quantization methods with descriptions
 declare -A QUANT_METHODS=(
-    ["q2_k"]="2-bit quantization (1.49 GB)"
-    ["q3_k_s"]="3-bit quantization - Small (1.71 GB)"
-    ["q3_k_m"]="3-bit quantization - Medium (1.86 GB)" 
-    ["q3_k_l"]="3-bit quantization - Large (1.98 GB)"
-    ["iq4_xs"]="4-bit quantization - Extra Small (2.05 GB)"
-    ["q4_k_s"]="4-bit quantization - Small (2.15 GB)"
-    ["q4_k_m"]="4-bit quantization - Medium (2.24 GB)"
-    ["q5_k_s"]="5-bit quantization - Small (2.54 GB)"
-    ["q5_k_m"]="5-bit quantization - Medium (2.59 GB)"
-    ["q6_k"]="6-bit quantization (2.97 GB)"
-    ["q8_0"]="8-bit quantization (3.84 GB)"
-    ["f16"]="16-bit float (7.22 GB)"
+    ["q2_k"]="2-bit quantization"
+    ["q3_k_s"]="3-bit quantization - Small"
+    ["q3_k_m"]="3-bit quantization - Medium" 
+    ["q3_k_l"]="3-bit quantization - Large"
+    ["iq4_xs"]="4-bit quantization - Extra Small"
+    ["q4_k_s"]="4-bit quantization - Small"
+    ["q4_k_m"]="4-bit quantization - Medium"
+    ["q5_k_s"]="5-bit quantization - Small"
+    ["q5_k_m"]="5-bit quantization - Medium"
+    ["q6_k"]="6-bit quantization"
+    ["q8_0"]="8-bit quantization"
+    ["f16"]="16-bit float"
 )
 
 # Function to print colored output
