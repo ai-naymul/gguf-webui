@@ -18,7 +18,7 @@ HF_REPO_ID=""
 BASE_MODEL_DIR="./original_model"
 QUANTIZED_DIR="./quantized_model"
 LLAMA_CPP_DIR="./llama.cpp"
-UPLOAD_TO_HF=false
+UPLOAD_TO_HF=true
 PRIVATE_REPO=false
 
 # Available quantization methods with descriptions
@@ -113,25 +113,85 @@ validate_method() {
 setup_llama_cpp() {
     print_color $BLUE "Setting up llama.cpp..."
     
+    # Detect system and install cmake if needed
+    if ! command -v cmake &> /dev/null; then
+        print_color $YELLOW "CMake not found. Installing CMake..."
+        
+        if [[ "$OSTYPE" == "darwin"* ]]; then
+            # macOS
+            if command -v brew &> /dev/null; then
+                brew install cmake
+            else
+                print_color $RED "Homebrew not found. Please install CMake manually from https://cmake.org/download/"
+                return 1
+            fi
+        elif [[ -f /etc/debian_version ]]; then
+            # Debian/Ubuntu
+            sudo apt update
+            sudo apt install cmake
+        elif [[ -f /etc/redhat-release ]]; then
+            # RHEL/CentOS/Fedora
+            if command -v dnf &> /dev/null; then
+                sudo dnf install cmake
+            else
+                sudo yum install cmake
+            fi
+        else
+            print_color $RED "Unsupported system. Please install CMake manually."
+            return 1
+        fi
+    else
+        print_color $GREEN "CMake already installed: $(cmake --version | head -n1)"
+    fi
+    
+    # Store current directory
+    local original_dir=$(pwd)
+    
     if [ ! -d "$LLAMA_CPP_DIR" ]; then
         print_color $YELLOW "Cloning llama.cpp repository..."
-        git clone https://github.com/ggerganov/llama.cpp "$LLAMA_CPP_DIR"
+        # Note: Fixed the repository URL (ggerganov -> ggml-org)
+        git clone https://github.com/ggml-org/llama.cpp "$LLAMA_CPP_DIR"
     else
         print_color $YELLOW "llama.cpp directory already exists, updating..."
         cd "$LLAMA_CPP_DIR"
         git pull
-        cd ..
+        cd "$original_dir"
     fi
     
+    # Navigate to llama.cpp directory
     cd "$LLAMA_CPP_DIR"
-    print_color $YELLOW "Building llama.cpp..."
-    LLAMA_CUBLAS=1 make
     
+    print_color $YELLOW "Building llama.cpp with CMake..."
+    
+    # Install CURL development libraries if not present
+    if ! pkg-config --exists libcurl 2>/dev/null; then
+        print_color $YELLOW "Installing CURL development libraries..."
+        if [[ -f /etc/debian_version ]]; then
+            sudo apt update
+            sudo apt install libcurl4-openssl-dev
+        elif [[ -f /etc/redhat-release ]]; then
+            if command -v dnf &> /dev/null; then
+                sudo dnf install libcurl-devel
+            else
+                sudo yum install libcurl-devel
+            fi
+        fi
+    fi
+    
+    # Build using CMake (more reliable than make)
+    cmake -B build
+    cmake --build build --config Release
+    
+    # Optional: Install Python requirements if they exist
     if [ -f "requirements.txt" ]; then
         print_color $YELLOW "Installing Python requirements..."
         pip install -r requirements.txt
     fi
-    cd ..
+    
+    # Return to original directory
+    cd "$original_dir"
+    
+    print_color $GREEN "llama.cpp setup completed successfully!"
 }
 
 # Function to check dependencies
@@ -184,8 +244,9 @@ convert_to_gguf() {
     
     if [ ! -f "$fp16_path" ]; then
         print_color $YELLOW "Converting to F16 GGUF..."
-        python3 "$LLAMA_CPP_DIR/convert-hf-to-gguf.py" "$BASE_MODEL_DIR" --outtype f16 --outfile "$fp16_path" || \
-        python "$LLAMA_CPP_DIR/convert-hf-to-gguf.py" "$BASE_MODEL_DIR" --outtype f16 --outfile "$fp16_path"
+        python3 "$LLAMA_CPP_DIR/convert_hf_to_gguf.py" "$BASE_MODEL_DIR" --outtype f16 --outfile "$fp16_path" || \
+        python "$LLAMA_CPP_DIR/convert_hf_to_gguf.py" "$BASE_MODEL_DIR" --outtype f16 --outfile "$fp16_path"
+
     else
         print_color $YELLOW "F16 GGUF already exists, skipping conversion..."
     fi
@@ -249,23 +310,43 @@ test_model() {
 }
 
 # Function to upload to Hugging Face
+# Function to upload to Hugging Face
 upload_to_hf() {
     if [ "$UPLOAD_TO_HF" = true ] && [ -n "$HF_REPO_ID" ]; then
         print_color $BLUE "Uploading to Hugging Face Hub..."
         
+        # Convert PRIVATE_REPO Bash boolean to Python-compatible literal
+        local private_py_bool="False"
+        if [[ "${PRIVATE_REPO,,}" == "true" ]]; then
+            private_py_bool="True"
+        fi
+        
         python3 -c "
-from huggingface_hub import HfApi, create_repo
 import os
+from huggingface_hub import HfApi, create_repo, login
 import glob
-
+from dotenv import load_dotenv
+load_dotenv()
 try:
+    # Check for HF_TOKEN environment variable
+    token = os.getenv('HF_TOKEN')
+    if token:
+        login(token=token)
+        print('✓ Authenticated with HF_TOKEN')
+    else:
+        print('⚠ No HF_TOKEN found, using cached credentials')
+    
     # Create repository
-    repo_url = create_repo('$HF_REPO_ID', private=$PRIVATE_REPO, exist_ok=True)
+    repo_url = create_repo('$HF_REPO_ID', private=$private_py_bool, exist_ok=True)
     print(f'Repository created/updated: {repo_url}')
     
     # Upload files
     api = HfApi()
     quantized_files = glob.glob('$QUANTIZED_DIR/*.gguf')
+    
+    if not quantized_files:
+        print('No GGUF files found to upload')
+        exit(1)
     
     for file_path in quantized_files:
         filename = os.path.basename(file_path)
@@ -282,36 +363,10 @@ try:
     
 except Exception as e:
     print(f'Error uploading to Hugging Face: {e}')
-    exit(1)
-" || python -c "
-from huggingface_hub import HfApi, create_repo
-import os
-import glob
-
-try:
-    # Create repository
-    repo_url = create_repo('$HF_REPO_ID', private=$PRIVATE_REPO, exist_ok=True)
-    print(f'Repository created/updated: {repo_url}')
-    
-    # Upload files
-    api = HfApi()
-    quantized_files = glob.glob('$QUANTIZED_DIR/*.gguf')
-    
-    for file_path in quantized_files:
-        filename = os.path.basename(file_path)
-        print(f'Uploading {filename}...')
-        api.upload_file(
-            path_or_fileobj=file_path,
-            path_in_repo=filename,
-            repo_id='$HF_REPO_ID',
-            repo_type='model',
-        )
-        print(f'✓ Uploaded {filename}')
-    
-    print('All files uploaded successfully!')
-    
-except Exception as e:
-    print(f'Error uploading to Hugging Face: {e}')
+    print('Please check your authentication:')
+    print('1. Run: huggingface-cli login')
+    print('2. Or set HF_TOKEN environment variable')
+    print('3. Make sure your token has write permissions')
     exit(1)
 "
     fi
