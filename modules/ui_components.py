@@ -86,11 +86,16 @@ class UIComponents:
             interactive=True
         )
     
-    # def create_chat_interface(self, height: int = 500) -> Tuple[gr.Chatbot, gr.Textbox, gr.Button]:
-    #     """Create a chat interface"""
-    #     chatbot = gr.Chatbot(
-    #         label="Conversation",
-    #         height=height,
-    #         show_copy_button=True,
-    #         bubble_full_width=False,
-    #         show_share_button=False
+    def create_chat_interface(self, height: int = 500) -> Tuple[gr.Chatbot, gr.Textbox, gr.Button]:
+        """Create a chat interface"""
+        chatbot = gr.Chatbot(
+            label="Conversation",
+            height=height,
+            show_copy_button=True,
+            bubble_full_width=False,
+            show_share_button=False,
+
+        )
+        return chatbot, gr.Textbox(label="Type your message here..."), gr.Button("Send", variant="primary")
+    
+    
